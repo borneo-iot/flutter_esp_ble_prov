@@ -13,6 +13,10 @@ class MethodChannelFlutterEspBleProv extends FlutterEspBleProvPlatform {
   @visibleForTesting
   final eventChannel = const EventChannel('flutter_esp_ble_prov_wifi_scan');
 
+  /// The event channel for BLE scan results.
+  @visibleForTesting
+  final bleEventChannel = const EventChannel('flutter_esp_ble_prov_ble_scan');
+
   @override
   Future<String?> getPlatformVersion() async {
     final version = await methodChannel.invokeMethod<String>(
@@ -22,17 +26,16 @@ class MethodChannelFlutterEspBleProv extends FlutterEspBleProvPlatform {
   }
 
   @override
-  Future<List<String>> scanBleDevices(String prefix) async {
-    final args = {'prefix': prefix};
-    final raw = await methodChannel.invokeMethod<List<Object?>>(
-      'scanBleDevices',
-      args,
-    );
-    final List<String> devices = [];
-    if (raw != null) {
-      devices.addAll(raw.cast<String>());
-    }
-    return devices;
+  Stream<String> scanBleDevices(String prefix) {
+    // First, invoke the method to start scanning
+    methodChannel.invokeMethod('startScanBleDevices', {'prefix': prefix});
+    // Then return the stream from event channel
+    return bleEventChannel.receiveBroadcastStream({'channel': 'ble'}).map((event) {
+      if (event is String) {
+        return event;
+      }
+      return '';
+    });
   }
 
   @override

@@ -27,7 +27,7 @@ abstract class FlutterEspBleProvPlatform extends PlatformInterface {
     throw UnimplementedError('platformVersion() has not been implemented.');
   }
 
-  Future<List<String>> scanBleDevices(String prefix) {
+  Stream<String> scanBleDevices(String prefix) {
     throw UnimplementedError('scanBleDevices has not been implemented.');
   }
 

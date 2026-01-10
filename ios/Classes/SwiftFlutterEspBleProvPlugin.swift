@@ -3,29 +3,32 @@ import UIKit
 import ESPProvision
 
 public class SwiftFlutterEspBleProvPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
-    private let SCAN_BLE_DEVICES = "scanBleDevices"
+    private let START_SCAN_BLE_DEVICES = "startScanBleDevices"
     private let START_SCAN_WIFI_NETWORKS = "startScanWifiNetworks"
     private let SCAN_WIFI_NETWORKS = "scanWifiNetworks"
     private let PROVISION_WIFI = "provisionWifi"
     
     private var eventSink: FlutterEventSink?
+    private var bleEventSink: FlutterEventSink?
     
     public static func register(with registrar: FlutterPluginRegistrar) {
         let channel = FlutterMethodChannel(name: "flutter_esp_ble_prov", binaryMessenger: registrar.messenger())
         let eventChannel = FlutterEventChannel(name: "flutter_esp_ble_prov_wifi_scan", binaryMessenger: registrar.messenger())
+        let bleEventChannel = FlutterEventChannel(name: "flutter_esp_ble_prov_ble_scan", binaryMessenger: registrar.messenger())
         let instance = SwiftFlutterEspBleProvPlugin()
         registrar.addMethodCallDelegate(instance, channel: channel)
         eventChannel.setStreamHandler(instance)
+        bleEventChannel.setStreamHandler(instance)
     }
     
 
     public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
-        let provisionService = BLEProvisionService(result: result, eventSink: eventSink);
+        let provisionService = BLEProvisionService(result: result, eventSink: eventSink, bleEventSink: bleEventSink);
         let arguments = call.arguments as! [String: Any]
         
-        if(call.method == SCAN_BLE_DEVICES) {
+        if(call.method == START_SCAN_BLE_DEVICES) {
             let prefix = arguments["prefix"] as! String
-            provisionService.searchDevices(prefix: prefix)
+            provisionService.startScanBleDevices(prefix: prefix)
         } else if(call.method == START_SCAN_WIFI_NETWORKS) {
             let deviceName = arguments["deviceName"] as! String
             let proofOfPossession = arguments["proofOfPossession"] as! String
@@ -47,7 +50,16 @@ public class SwiftFlutterEspBleProvPlugin: NSObject, FlutterPlugin, FlutterStrea
     }
     
     public func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
-        eventSink = events
+        if let args = arguments as? [String: Any], let channel = args["channel"] as? String {
+            if channel == "wifi" {
+                eventSink = events
+            } else if channel == "ble" {
+                bleEventSink = events
+            }
+        } else {
+            // Default to wifi for backward compatibility
+            eventSink = events
+        }
         return nil
     }
     
@@ -68,20 +80,26 @@ protocol ProvisionService {
 private class BLEProvisionService: ProvisionService {
     fileprivate var result: FlutterResult
     fileprivate var eventSink: FlutterEventSink?
+    fileprivate var bleEventSink: FlutterEventSink?
     
-    init(result: @escaping FlutterResult, eventSink: FlutterEventSink?) {
+    init(result: @escaping FlutterResult, eventSink: FlutterEventSink?, bleEventSink: FlutterEventSink?) {
         self.result = result
         self.eventSink = eventSink
+        self.bleEventSink = bleEventSink
     }
     
-    func searchDevices(prefix: String) {
+    func startScanBleDevices(prefix: String) {
         ESPProvisionManager.shared.searchESPDevices(devicePrefix: prefix, transport:.ble, security:.secure) { deviceList, error in
             if(error != nil) {
                 ESPErrorHandler.handle(error: error!, result: self.result)
             }
-            self.result(deviceList?.map({ (device: ESPDevice) -> String in
-                return device.name
-            }))
+            var seenDevices = Set<String>()
+            deviceList?.forEach { device in
+                if !seenDevices.contains(device.name) {
+                    seenDevices.insert(device.name)
+                    self.bleEventSink?(device.name)
+                }
+            }
         }
     }
     
