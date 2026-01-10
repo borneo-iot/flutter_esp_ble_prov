@@ -43,8 +43,8 @@ jobs:
       - name: Run tests
         run: flutter test
 
-  build:
-    name: Build Check
+  build-android:
+    name: Build Android
     runs-on: ubuntu-latest
     
     steps:
@@ -58,8 +58,29 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
       
-      - name: Build example app
+      - name: Build example APK
         run: |
           cd example
           flutter build apk --debug
+        continue-on-error: true
+
+  build-ios:
+    name: Build iOS
+    runs-on: macos-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 'latest'
+      
+      - name: Install dependencies
+        run: flutter pub get
+      
+      - name: Build example iOS
+        run: |
+          cd example
+          flutter build ios --no-codesign --debug
         continue-on-error: true
