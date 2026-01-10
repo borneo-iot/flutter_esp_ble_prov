@@ -63,7 +63,16 @@ jobs:
 
   build-android:
     name: Build Android
-    ru    cache: true
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
       
       - name: Cache Pub dependencies
         uses: actions/cache@v3
@@ -80,36 +89,10 @@ jobs:
           key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
           restore-keys: |
             ${{ runner.os }}-gradle-
-      ns-on: ubuntu-latest
-    
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: 'stable'
       
       - name: Install dependencies
         run: flutter pub get
       
-          cache: true
-      
-      - name: Cache Pub dependencies
-        uses: actions/cache@v3
-        with:
-          path: ~/.pub-cache
-          key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-pub-
-      
-      - name: Cache Cocoapods
-        uses: actions/cache@v3
-        with:
-          path: ~/.cocoapods
-          key: ${{ runner.os }}-cocoapods-${{ hashFiles('**/Podfile.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cocoapods-
       - name: Build example APK
         run: |
           cd example
@@ -127,6 +110,23 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
+          cache: true
+      
+      - name: Cache Pub dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.pub-cache
+          key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pub-
+      
+      - name: Cache Cocoapods
+        uses: actions/cache@v3
+        with:
+          path: ~/.cocoapods
+          key: ${{ runner.os }}-cocoapods-${{ hashFiles('**/Podfile.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cocoapods-
       
       - name: Install dependencies
         run: flutter pub get

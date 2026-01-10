@@ -9,13 +9,15 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(() {
-    channel.setMockMethodCallHandler((MethodCall methodCall) async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
       return '42';
     });
   });
 
   tearDown(() {
-    channel.setMockMethodCallHandler(null);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, null);
   });
 
   test('getPlatformVersion', () async {
@@ -24,7 +26,8 @@ void main() {
 
   test('scanWifiNetworksWithDetails', () async {
     // Mock the method call handler for scanWifiNetworksWithDetails
-    channel.setMockMethodCallHandler((MethodCall methodCall) async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
       if (methodCall.method == 'scanWifiNetworksWithDetails') {
         return [
           {'ssid': 'TestNetwork1', 'rssi': -45, 'security': 1},
