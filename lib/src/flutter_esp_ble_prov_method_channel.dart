@@ -2,20 +2,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'flutter_esp_ble_prov_platform_interface.dart';
+import 'wifi_network.dart';
 
 /// An implementation of [FlutterEspBleProvPlatform] that uses method channels.
 class MethodChannelFlutterEspBleProv extends FlutterEspBleProvPlatform {
   /// The method channel used to interact with the native platform.
   @visibleForTesting
   final methodChannel = const MethodChannel('flutter_esp_ble_prov');
-
-  /// The event channel for WiFi scan results.
-  @visibleForTesting
-  final eventChannel = const EventChannel('flutter_esp_ble_prov_wifi_scan');
-
-  /// The event channel for BLE scan results.
-  @visibleForTesting
-  final bleEventChannel = const EventChannel('flutter_esp_ble_prov_ble_scan');
 
   @override
   Future<String?> getPlatformVersion() async {
@@ -26,35 +19,71 @@ class MethodChannelFlutterEspBleProv extends FlutterEspBleProvPlatform {
   }
 
   @override
-  Stream<String> scanBleDevices(String prefix) {
-    // First, invoke the method to start scanning
-    methodChannel.invokeMethod('startScanBleDevices', {'prefix': prefix});
-    // Then return the stream from event channel
-    return bleEventChannel.receiveBroadcastStream({'channel': 'ble'}).map((event) {
-      if (event is String) {
-        return event;
-      }
-      return '';
-    });
+  Future<List<String>> scanBleDevices(String prefix) async {
+    final args = {'prefix': prefix};
+    final raw = await methodChannel.invokeMethod<List<Object?>>(
+      'scanBleDevices',
+      args,
+    );
+    final List<String> devices = [];
+    if (raw != null) {
+      devices.addAll(raw.cast<String>());
+    }
+    return devices;
   }
 
   @override
-  Stream<Map<String, dynamic>> scanWifiNetworks(
+  Future<List<String>> scanWifiNetworks(
     String deviceName,
     String proofOfPossession,
-  ) {
-    // First, invoke the method to start scanning
-    methodChannel.invokeMethod('startScanWifiNetworks', {
+  ) async {
+    final args = {
       'deviceName': deviceName,
       'proofOfPossession': proofOfPossession,
-    });
-    // Then return the stream from event channel
-    return eventChannel.receiveBroadcastStream().map((event) {
-      if (event is Map<Object?, Object?>) {
-        return event.cast<String, dynamic>();
-      }
-      return {};
-    });
+    };
+    final raw = await methodChannel.invokeMethod<List<Object?>>(
+      'scanWifiNetworks',
+      args,
+    );
+    final List<String> networks = [];
+    if (raw != null) {
+      networks.addAll(raw.cast<String>());
+    }
+    return networks;
+  }
+
+  @override
+  Future<List<WifiNetwork>> scanWifiNetworksWithDetails(
+    String deviceName,
+    String proofOfPossession,
+  ) async {
+    final args = {
+      'deviceName': deviceName,
+      'proofOfPossession': proofOfPossession,
+    };
+    final raw = await methodChannel.invokeMethod<List<Object?>>(
+      'scanWifiNetworksWithDetails',
+      args,
+    );
+    final List<WifiNetwork> networks = [];
+    if (raw != null) {
+      networks.addAll(
+        raw.map((item) {
+          if (item is Map<Object?, Object?>) {
+            // Convert Map<Object?, Object?> to Map<String, dynamic>
+            final map = <String, dynamic>{};
+            item.forEach((key, value) {
+              if (key is String) {
+                map[key] = value;
+              }
+            });
+            return WifiNetwork.fromJson(map);
+          }
+          throw FormatException('Invalid data format: $item');
+        }),
+      );
+    }
+    return networks;
   }
 
   @override

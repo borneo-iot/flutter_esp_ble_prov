@@ -20,7 +20,6 @@ import com.espressif.provisioning.listeners.WiFiScanListener
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
-import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
@@ -137,35 +136,14 @@ abstract class ActionManager(val boss: Boss) {
  * Everything is asynchronous here, and this class handles that stuff through a series of
  * "manager" classes.
  */
-class Boss : EventChannel.StreamHandler {
-
-  var eventSink: EventChannel.EventSink? = null
-  var bleEventSink: EventChannel.EventSink? = null
-
-  override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
-    if (arguments is Map<*, *>) {
-      val channel = arguments["channel"] as? String
-      if (channel == "ble") {
-        bleEventSink = events
-      } else {
-        eventSink = events
-      }
-    } else {
-      eventSink = events
-    }
-  }
-
-  override fun onCancel(arguments: Any?) {
-    eventSink = null
-    bleEventSink = null
-  }
+class Boss {
 
   private val logTag = "FlutterEspBleProv"
 
   // Method names as called from Flutter across the channel.
-  private val startScanBleMethod = "startScanBleDevices"
-  private val startScanWifiMethod = "startScanWifiNetworks"
+  private val scanBleMethod = "scanBleDevices"
   private val scanWifiMethod = "scanWifiNetworks"
+  private val scanWifiWithDetailsMethod = "scanWifiNetworksWithDetails"
   private val provisionWifiMethod = "provisionWifi"
   private val platformVersionMethod = "getPlatformVersion"
 
@@ -177,12 +155,13 @@ class Boss : EventChannel.StreamHandler {
   /**
    * The available WiFi networks for the most recently scanned BLE device.
    */
-  val networks = mutableListOf<Map<String, String>>()
+  val networks = mutableSetOf<String>()
 
   // Managers performing the various actions
   private val permissionManager: PermissionManager = PermissionManager(this)
-  private val bleStreamScanner: BleStreamScanManager = BleStreamScanManager(this)
+  private val bleScanner: BleScanManager = BleScanManager(this)
   private val wifiScanner: WifiScanManager = WifiScanManager(this)
+  private val wifiScannerWithDetails: WifiScanWithDetailsManager = WifiScanWithDetailsManager(this)
   private val wifiProvisioner: WifiProvisionManager = WifiProvisionManager(this)
 
   private lateinit var platformContext: Context
@@ -226,8 +205,9 @@ class Boss : EventChannel.StreamHandler {
       val ctx = CallContext(call, result)
       when (call.method) {
         platformVersionMethod -> getPlatformVersion(ctx)
-        startScanBleMethod -> bleStreamScanner.call(ctx)
-        startScanWifiMethod -> wifiScanner.call(ctx)
+        scanBleMethod -> bleScanner.call(ctx)
+        scanWifiMethod -> wifiScanner.call(ctx)
+        scanWifiWithDetailsMethod -> wifiScannerWithDetails.call(ctx)
         provisionWifiMethod -> wifiProvisioner.call(ctx)
         else -> result.notImplemented()
       }
@@ -256,14 +236,13 @@ class Boss : EventChannel.StreamHandler {
 }
 
 
-class BleStreamScanManager(boss: Boss) : ActionManager(boss) {
+class BleScanManager(boss: Boss) : ActionManager(boss) {
 
   @SuppressLint("MissingPermission")
   override fun call(ctx: CallContext) {
-    boss.d("startSearchBleEspDevices: start")
+    boss.d("searchBleEspDevices: start")
     val prefix = ctx.arg("prefix") ?: return
 
-    boss.devices.clear() // Clear previous results
     boss.espManager.searchBleEspDevices(prefix, object : BleScanListener {
       override fun scanStartFailed() {
         TODO("Not yet implemented")
@@ -272,19 +251,12 @@ class BleStreamScanManager(boss: Boss) : ActionManager(boss) {
       override fun onPeripheralFound(device: BluetoothDevice?, scanResult: ScanResult?) {
         device ?: return
         scanResult ?: return
-        val deviceName = device.name
-        // Only send if we haven't seen this device before
-        if (!boss.devices.containsKey(deviceName)) {
-          boss.devices.put(deviceName, BleConnector(device, scanResult))
-          // Send device name immediately through stream
-          Handler(Looper.getMainLooper()).post {
-            boss.bleEventSink?.success(deviceName)
-          }
-        }
+        boss.devices.put(device.name, BleConnector(device, scanResult))
       }
 
       override fun scanCompleted() {
-        boss.d("startSearchBleEspDevices: scanComplete")
+        ctx.result.success(ArrayList<String>(boss.devices.keys))
+        boss.d("searchBleEspDevices: scanComplete")
       }
 
       override fun onFailure(e: java.lang.Exception?) {
@@ -307,18 +279,53 @@ class WifiScanManager(boss: Boss) : ActionManager(boss) {
       esp.scanNetworks(object : WiFiScanListener {
         override fun onWifiListReceived(wifiList: ArrayList<WiFiAccessPoint>?) {
           wifiList ?: return
-          wifiList.forEach {
-            val network = mapOf("ssid" to it.wifiName, "rssi" to it.rssi.toString())
-            Handler(Looper.getMainLooper()).post {
-              boss.eventSink?.success(network)
-            }
+          wifiList.forEach { boss.networks.add(it.wifiName) }
+          boss.d("scanNetworks: complete ${boss.networks}")
+          Handler(Looper.getMainLooper()).post {
+            ctx.result.success(ArrayList<String>(boss.networks))
           }
-          boss.d("scanNetworks: complete")
+          boss.d("scanNetworks: complete 2 ${boss.networks}")
           esp.disconnectDevice()
         }
 
         override fun onWiFiScanFailed(e: java.lang.Exception?) {
           boss.e("scanNetworks: error $e")
+          ctx.result.error("E1", "WiFi scan failed", "Exception details $e")
+        }
+      })
+    }
+  }
+}
+
+
+class WifiScanWithDetailsManager(boss: Boss) : ActionManager(boss) {
+  override fun call(ctx: CallContext) {
+    val name = ctx.arg("deviceName") ?: return
+    val proofOfPossession = ctx.arg("proofOfPossession") ?: return
+    val conn = boss.connector(name) ?: return
+    boss.d("esp connect: start")
+    boss.connect(conn, proofOfPossession) { esp ->
+      boss.d("scanNetworksWithDetails: start")
+      esp.scanNetworks(object : WiFiScanListener {
+        override fun onWifiListReceived(wifiList: ArrayList<WiFiAccessPoint>?) {
+          wifiList ?: return
+          val networks = wifiList.map { accessPoint ->
+            mapOf(
+              "ssid" to accessPoint.wifiName,
+              "rssi" to accessPoint.rssi,
+              "security" to accessPoint.security
+            )
+          }
+          boss.d("scanNetworksWithDetails: complete ${networks}")
+          Handler(Looper.getMainLooper()).post {
+            ctx.result.success(networks)
+          }
+          boss.d("scanNetworksWithDetails: complete 2 ${networks}")
+          esp.disconnectDevice()
+        }
+
+        override fun onWiFiScanFailed(e: java.lang.Exception?) {
+          boss.e("scanNetworksWithDetails: error $e")
           ctx.result.error("E1", "WiFi scan failed", "Exception details $e")
         }
       })
@@ -389,17 +396,12 @@ class FlutterEspBleProvPlugin : FlutterPlugin, MethodCallHandler, ActivityAware,
   private val logTag = "FlutterEspBleProvChannel"
   private val boss = Boss()
   private lateinit var channel: MethodChannel
-  private lateinit var eventChannel: EventChannel
   private var activityBinding: ActivityPluginBinding? = null
 
   override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
     Log.d(logTag, "onAttachedToEngine: $binding")
     channel = MethodChannel(binding.binaryMessenger, "flutter_esp_ble_prov")
     channel.setMethodCallHandler(this)
-    eventChannel = EventChannel(binding.binaryMessenger, "flutter_esp_ble_prov_wifi_scan")
-    eventChannel.setStreamHandler(boss)
-    val bleEventChannel = EventChannel(binding.binaryMessenger, "flutter_esp_ble_prov_ble_scan")
-    bleEventChannel.setStreamHandler(boss)
     boss.attachContext(binding.applicationContext)
   }
 
