@@ -21,7 +21,7 @@ class _MyAppState extends State<MyApp> {
   final defaultDevicePrefix = 'PROV';
 
   List<String> devices = [];
-  List<String> networks = [];
+  List<Map<String, dynamic>> networks = [];
 
   String selectedDeviceName = '';
   String selectedSsid = '';
@@ -43,11 +43,16 @@ class _MyAppState extends State<MyApp> {
 
   Future scanWifiNetworks() async {
     final proofOfPossession = proofOfPossessionController.text;
-    final scannedNetworks = await _flutterEspBleProvPlugin.scanWifiNetworks(
+    final stream = _flutterEspBleProvPlugin.scanWifiNetworks(
         selectedDeviceName, proofOfPossession);
     setState(() {
-      networks = scannedNetworks;
+      networks = [];
     });
+    await for (final network in stream) {
+      setState(() {
+        networks.add(network);
+      });
+    }
     pushFeedback('Success: scanned WiFi on $selectedDeviceName');
   }
 
@@ -180,14 +185,14 @@ class _MyAppState extends State<MyApp> {
                     itemBuilder: (context, i) {
                       return ListTile(
                         title: Text(
-                          networks[i],
+                          '${networks[i]['ssid']} (RSSI: ${networks[i]['rssi']})',
                           style: TextStyle(
                             color: Colors.green.shade700,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
                         onTap: () async {
-                          selectedSsid = networks[i];
+                          selectedSsid = networks[i]['ssid'];
                           await provisionWifi();
                         },
                       );

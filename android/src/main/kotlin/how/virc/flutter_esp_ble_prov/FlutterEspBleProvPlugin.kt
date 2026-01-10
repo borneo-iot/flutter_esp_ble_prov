@@ -136,12 +136,23 @@ abstract class ActionManager(val boss: Boss) {
  * Everything is asynchronous here, and this class handles that stuff through a series of
  * "manager" classes.
  */
-class Boss {
+class Boss : EventChannel.StreamHandler {
+
+  var eventSink: EventChannel.EventSink? = null
+
+  override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+    eventSink = events
+  }
+
+  override fun onCancel(arguments: Any?) {
+    eventSink = null
+  }
 
   private val logTag = "FlutterEspBleProv"
 
   // Method names as called from Flutter across the channel.
   private val scanBleMethod = "scanBleDevices"
+  private val startScanWifiMethod = "startScanWifiNetworks"
   private val scanWifiMethod = "scanWifiNetworks"
   private val provisionWifiMethod = "provisionWifi"
   private val platformVersionMethod = "getPlatformVersion"
@@ -154,7 +165,7 @@ class Boss {
   /**
    * The available WiFi networks for the most recently scanned BLE device.
    */
-  val networks = mutableSetOf<String>()
+  val networks = mutableListOf<Map<String, String>>()
 
   // Managers performing the various actions
   private val permissionManager: PermissionManager = PermissionManager(this)
@@ -204,7 +215,7 @@ class Boss {
       when (call.method) {
         platformVersionMethod -> getPlatformVersion(ctx)
         scanBleMethod -> bleScanner.call(ctx)
-        scanWifiMethod -> wifiScanner.call(ctx)
+        startScanWifiMethod -> wifiScanner.call(ctx)
         provisionWifiMethod -> wifiProvisioner.call(ctx)
         else -> result.notImplemented()
       }
@@ -276,12 +287,13 @@ class WifiScanManager(boss: Boss) : ActionManager(boss) {
       esp.scanNetworks(object : WiFiScanListener {
         override fun onWifiListReceived(wifiList: ArrayList<WiFiAccessPoint>?) {
           wifiList ?: return
-          wifiList.forEach { boss.networks.add(it.wifiName) }
-          boss.d("scanNetworks: complete ${boss.networks}")
-          Handler(Looper.getMainLooper()).post {
-            ctx.result.success(ArrayList<String>(boss.networks))
+          wifiList.forEach {
+            val network = mapOf("ssid" to it.wifiName, "rssi" to it.rssi.toString())
+            Handler(Looper.getMainLooper()).post {
+              boss.eventSink?.success(network)
+            }
           }
-          boss.d("scanNetworks: complete 2 ${boss.networks}")
+          boss.d("scanNetworks: complete")
           esp.disconnectDevice()
         }
 
@@ -357,12 +369,15 @@ class FlutterEspBleProvPlugin : FlutterPlugin, MethodCallHandler, ActivityAware,
   private val logTag = "FlutterEspBleProvChannel"
   private val boss = Boss()
   private lateinit var channel: MethodChannel
+  private lateinit var eventChannel: EventChannel
   private var activityBinding: ActivityPluginBinding? = null
 
   override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
     Log.d(logTag, "onAttachedToEngine: $binding")
     channel = MethodChannel(binding.binaryMessenger, "flutter_esp_ble_prov")
     channel.setMethodCallHandler(this)
+    eventChannel = EventChannel(binding.binaryMessenger, "flutter_esp_ble_prov_wifi_scan")
+    eventChannel.setStreamHandler(boss)
     boss.attachContext(binding.applicationContext)
   }
 

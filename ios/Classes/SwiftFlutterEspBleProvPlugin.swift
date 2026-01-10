@@ -2,29 +2,34 @@ import Flutter
 import UIKit
 import ESPProvision
 
-public class SwiftFlutterEspBleProvPlugin: NSObject, FlutterPlugin {
+public class SwiftFlutterEspBleProvPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
     private let SCAN_BLE_DEVICES = "scanBleDevices"
+    private let START_SCAN_WIFI_NETWORKS = "startScanWifiNetworks"
     private let SCAN_WIFI_NETWORKS = "scanWifiNetworks"
     private let PROVISION_WIFI = "provisionWifi"
     
+    private var eventSink: FlutterEventSink?
+    
     public static func register(with registrar: FlutterPluginRegistrar) {
         let channel = FlutterMethodChannel(name: "flutter_esp_ble_prov", binaryMessenger: registrar.messenger())
+        let eventChannel = FlutterEventChannel(name: "flutter_esp_ble_prov_wifi_scan", binaryMessenger: registrar.messenger())
         let instance = SwiftFlutterEspBleProvPlugin()
         registrar.addMethodCallDelegate(instance, channel: channel)
+        eventChannel.setStreamHandler(instance)
     }
     
 
     public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
-        let provisionService = BLEProvisionService(result: result);
+        let provisionService = BLEProvisionService(result: result, eventSink: eventSink);
         let arguments = call.arguments as! [String: Any]
         
         if(call.method == SCAN_BLE_DEVICES) {
             let prefix = arguments["prefix"] as! String
             provisionService.searchDevices(prefix: prefix)
-        } else if(call.method == SCAN_WIFI_NETWORKS) {
+        } else if(call.method == START_SCAN_WIFI_NETWORKS) {
             let deviceName = arguments["deviceName"] as! String
             let proofOfPossession = arguments["proofOfPossession"] as! String
-            provisionService.scanWifiNetworks(deviceName: deviceName, proofOfPossession: proofOfPossession)
+            provisionService.startScanWifiNetworks(deviceName: deviceName, proofOfPossession: proofOfPossession)
         } else if (call.method == PROVISION_WIFI) {
             let deviceName = arguments["deviceName"] as! String
             let proofOfPossession = arguments["proofOfPossession"] as! String
@@ -41,20 +46,32 @@ public class SwiftFlutterEspBleProvPlugin: NSObject, FlutterPlugin {
         }
     }
     
+    public func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
+        eventSink = events
+        return nil
+    }
+    
+    public func onCancel(withArguments arguments: Any?) -> FlutterError? {
+        eventSink = nil
+        return nil
+    }
+    
 }
 
 protocol ProvisionService {
     var result: FlutterResult { get }
     func searchDevices(prefix: String) -> Void
-    func scanWifiNetworks(deviceName: String, proofOfPossession: String) -> Void
+    func startScanWifiNetworks(deviceName: String, proofOfPossession: String) -> Void
     func provision(deviceName: String, proofOfPossession: String, ssid: String, passphrase: String) -> Void
 }
 
 private class BLEProvisionService: ProvisionService {
     fileprivate var result: FlutterResult
+    fileprivate var eventSink: FlutterEventSink?
     
-    init(result: @escaping FlutterResult) {
+    init(result: @escaping FlutterResult, eventSink: FlutterEventSink?) {
         self.result = result
+        self.eventSink = eventSink
     }
     
     func searchDevices(prefix: String) {
@@ -68,15 +85,18 @@ private class BLEProvisionService: ProvisionService {
         }
     }
     
-    func scanWifiNetworks(deviceName: String, proofOfPossession: String) {
+    func startScanWifiNetworks(deviceName: String, proofOfPossession: String) {
         self.connect(deviceName: deviceName, proofOfPossession: proofOfPossession) {
             device in
             device?.scanWifiList { wifiList, error in
                 if(error != nil) {
                     NSLog("Error scanning wifi networks, deviceName: \(deviceName) ")
-                    ESPErrorHandler.handle(error: error!, result: self.result)
+                    // Handle error via eventSink if needed
                 }
-                self.result(wifiList?.map({(networks: ESPWifiNetwork) -> String in return networks.ssid}))
+                wifiList?.forEach { network in
+                    let networkDict = ["ssid": network.ssid, "rssi": String(network.rssi)]
+                    self.eventSink?(networkDict)
+                }
                 device?.disconnect()
             }
         }

@@ -31,13 +31,19 @@ abstract class FlutterEspBleProvPlatform extends PlatformInterface {
     throw UnimplementedError('scanBleDevices has not been implemented.');
   }
 
-  Future<List<String>> scanWifiNetworks(
-      String deviceName, String proofOfPossession) {
+  Stream<Map<String, dynamic>> scanWifiNetworks(
+    String deviceName,
+    String proofOfPossession,
+  ) {
     throw UnimplementedError('scanWifiNetworks has not been implemented.');
   }
 
-  Future<bool?> provisionWifi(String deviceName, String proofOfPossession,
-      String ssid, String passphrase) {
+  Future<bool?> provisionWifi(
+    String deviceName,
+    String proofOfPossession,
+    String ssid,
+    String passphrase,
+  ) {
     throw UnimplementedError('provisionWifi has not been implemented');
   }
 }
