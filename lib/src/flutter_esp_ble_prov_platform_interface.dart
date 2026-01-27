@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 import 'flutter_esp_ble_prov_method_channel.dart';
@@ -55,5 +56,14 @@ abstract class FlutterEspBleProvPlatform extends PlatformInterface {
     String passphrase,
   ) {
     throw UnimplementedError('provisionWifi has not been implemented');
+  }
+
+  Future<Uint8List?> sendDataToCustomEndPoint(
+    String deviceName,
+    String proofOfPossession,
+    String path,
+    Uint8List data,
+  ) {
+    throw UnimplementedError('sendDataToCustomEndPoint has not been implemented');
   }
 }

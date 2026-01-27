@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'src/flutter_esp_ble_prov_platform_interface.dart';
 import 'src/wifi_network.dart';
 
@@ -57,6 +58,21 @@ class FlutterEspBleProv {
       proofOfPossession,
       ssid,
       passphrase,
+    );
+  }
+
+  /// Send custom data to a custom endpoint on the device.
+  Future<Uint8List?> sendDataToCustomEndPoint(
+    String deviceName,
+    String proofOfPossession,
+    String path,
+    Uint8List data,
+  ) {
+    return FlutterEspBleProvPlatform.instance.sendDataToCustomEndPoint(
+      deviceName,
+      proofOfPossession,
+      path,
+      data,
     );
   }
 

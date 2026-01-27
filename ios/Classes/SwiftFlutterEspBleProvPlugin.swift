@@ -7,6 +7,7 @@ public class SwiftFlutterEspBleProvPlugin: NSObject, FlutterPlugin {
     private let SCAN_WIFI_NETWORKS = "scanWifiNetworks"
     private let SCAN_WIFI_NETWORKS_WITH_DETAILS = "scanWifiNetworksWithDetails"
     private let PROVISION_WIFI = "provisionWifi"
+    private let SEND_DATA_TO_CUSTOM_END_POINT = "sendDataToCustomEndPoint"
     
     public static func register(with registrar: FlutterPluginRegistrar) {
         let channel = FlutterMethodChannel(name: "flutter_esp_ble_prov", binaryMessenger: registrar.messenger())
@@ -30,6 +31,17 @@ public class SwiftFlutterEspBleProvPlugin: NSObject, FlutterPlugin {
             let deviceName = arguments["deviceName"] as! String
             let proofOfPossession = arguments["proofOfPossession"] as! String
             provisionService.scanWifiNetworksWithDetails(deviceName: deviceName, proofOfPossession: proofOfPossession)
+        } else if(call.method == SEND_DATA_TO_CUSTOM_END_POINT) {
+            let deviceName = arguments["deviceName"] as! String
+            let proofOfPossession = arguments["proofOfPossession"] as! String
+            let path = arguments["path"] as! String
+            let data = (arguments["data"] as! FlutterStandardTypedData).data
+            provisionService.sendData(
+                deviceName: deviceName,
+                proofOfPossession: proofOfPossession,
+                path: path,
+                data: data
+            )
         } else if (call.method == PROVISION_WIFI) {
             let deviceName = arguments["deviceName"] as! String
             let proofOfPossession = arguments["proofOfPossession"] as! String
@@ -54,6 +66,7 @@ protocol ProvisionService {
     func scanWifiNetworks(deviceName: String, proofOfPossession: String) -> Void
     func scanWifiNetworksWithDetails(deviceName: String, proofOfPossession: String) -> Void
     func provision(deviceName: String, proofOfPossession: String, ssid: String, passphrase: String) -> Void
+    func sendData(deviceName: String, proofOfPossession: String, path: String, data: Data) -> Void
 }
 
 private class BLEProvisionService: ProvisionService {
@@ -131,6 +144,21 @@ private class BLEProvisionService: ProvisionService {
                     self.result(false)
                     device?.disconnect()
                 }
+            }
+        }
+    }
+
+    func sendData(deviceName: String, proofOfPossession: String, path: String, data: Data) {
+        self.connect(deviceName: deviceName, proofOfPossession: proofOfPossession) { device in
+            device?.sendData(path: path, data: data) { returnData, error in
+                if let error = error {
+                    NSLog("Error sending data to custom endpoint, deviceName: \(deviceName) ")
+                    self.result(FlutterError(code: "E_SEND_DATA_FAILED", message: error.localizedDescription, details: nil))
+                    device?.disconnect()
+                    return
+                }
+                self.result(returnData)
+                device?.disconnect()
             }
         }
     }

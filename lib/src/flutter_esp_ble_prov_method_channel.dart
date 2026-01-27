@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
@@ -100,5 +101,22 @@ class MethodChannelFlutterEspBleProv extends FlutterEspBleProvPlatform {
       'passphrase': passphrase,
     };
     return await methodChannel.invokeMethod<bool?>('provisionWifi', args);
+  }
+
+  @override
+  Future<Uint8List?> sendDataToCustomEndPoint(
+    String deviceName,
+    String proofOfPossession,
+    String path,
+    Uint8List data,
+  ) async {
+    final args = {
+      'deviceName': deviceName,
+      'proofOfPossession': proofOfPossession,
+      'path': path,
+      'data': data,
+    };
+    final result = await methodChannel.invokeMethod<Uint8List?>('sendDataToCustomEndPoint', args);
+    return result;
   }
 }
